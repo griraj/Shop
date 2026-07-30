@@ -1,7 +1,9 @@
 
-
 import os
 import sys
+import json
+import urllib.request
+import urllib.error
 from decimal import Decimal, InvalidOperation
 
 import psycopg
@@ -10,7 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.environ.get("OPENAI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/models")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 ENCRYPTION_SHIFT = 5  
 
 def encrypt_text(text, shift=ENCRYPTION_SHIFT):
@@ -93,7 +97,7 @@ def view_categories(conn):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("""
             SELECT c.categoryid, c.categoryname, Count(i.itemid) As item_count
-            FROM categories c~
+            FROM categories c
             LEFT JOIN items i ON i.categoryid = c.categoryid
             GROUP BY c.categoryid, c.categoryname
             ORDER BY c.categoryid
@@ -203,7 +207,7 @@ def view_encrypted(conn):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT itemid, itemname FROM items ORDER BY itemid")
         rows = cur.fetchall()
-    # Decrypt from storage, then re-encrypt with user's shift for display
+
     for row in rows:
         decrypted = decrypt_text(row['itemname'])
         row['decrypted_name'] = decrypted
@@ -304,6 +308,298 @@ def migrate():
     pause()
 
 
+# ---------------------------------------------------------
+# GEMINI API — low-level request helper
+# (uses the CURRENT Gemini API: v1beta .../{model}:generateContent
+#  — not the old, deprecated v1beta2 chat-bison-001:generateMessage
+#  endpoint, which is what was causing the "scalar field" error)
+# ---------------------------------------------------------
+def gemini_generate_content(contents, tools=None, temperature=0.7):
+    """Send a request to the Gemini generateContent endpoint and return
+    the model's response content block: {"role": "model", "parts": [...]}."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
+
+    endpoint = f"{GEMINI_BASE_URL.rstrip('/')}/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": contents,
+        "generationConfig": {"temperature": temperature},
+    }
+    if tools:
+        payload["tools"] = tools
+
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            response_text = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as err:
+        error_body = err.read().decode("utf-8")
+        raise RuntimeError(f"Gemini API error {err.code}: {error_body}") from err
+    except urllib.error.URLError as err:
+        raise RuntimeError(f"Gemini request failed: {err.reason}") from err
+
+    response_data = json.loads(response_text)
+    candidates = response_data.get("candidates")
+    if not candidates:
+        raise RuntimeError(f"Unexpected Gemini response: {response_data}")
+    return candidates[0]["content"]
+
+
+def gemini_text(prompt_text, temperature=0.7):
+    """Simple single-turn text generation — used by the description feature."""
+    content = gemini_generate_content(
+        contents=[{"role": "user", "parts": [{"text": prompt_text}]}],
+        temperature=temperature,
+    )
+    parts = content.get("parts", [])
+    return "".join(p.get("text", "") for p in parts).strip()
+
+
+# ---------------------------------------------------------
+# GENERATIVE AI — Gemini writes a product description
+# ---------------------------------------------------------
+def generate_description(conn):
+    """Ask Gemini API to write a short description for an existing item."""
+    print_header("Generate item description (Gemini API)")
+    view_items_inline(conn)
+    item_id = prompt_int("Item ID to generate a description for : ")
+    if item_id is None:
+        return
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("""
+            SELECT i.itemname, c.categoryname
+            FROM items i
+            LEFT JOIN categories c ON i.categoryid = c.categoryid
+            WHERE i.itemid = %s
+        """, (item_id,))
+        row = cur.fetchone()
+
+    if not row:
+        print("[!] No item with that ID.")
+        pause()
+        return
+
+    item_name = decrypt_text(row['itemname'])
+    prompt = (
+        f"Write one short, appealing product description (max 25 words) for an item "
+        f"called '{item_name}' in the '{row['categoryname']}' category. "
+        f"Reply with only the description, no extra text."
+    )
+
+    print("\nAsking Gemini API...")
+    try:
+        description = gemini_text(prompt)
+        print(f"\nGenerated description:\n  \"{description}\"")
+    except Exception as e:
+        print(f"\n[ERROR] Could not reach Gemini API: {e}")
+        print("Make sure GEMINI_API_KEY is set and the model is available.")
+    pause()
+
+
+# ---------------------------------------------------------
+# AGENTIC AI — Gemini decides which function to call
+# (Gemini's function-calling schema uses UPPERCASE type names
+#  and a "functionDeclarations" wrapper, unlike OpenAI/Ollama's
+#  "type": "function" format.)
+# ---------------------------------------------------------
+AGENT_TOOLS = [
+    {
+        "functionDeclarations": [
+            {
+                "name": "list_items",
+                "description": "List all items in the inventory with id, name, price, stock quantity, and category.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "list_categories",
+                "description": "List all categories and how many items belong to each.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "add_item_ai",
+                "description": "Add a new item to the inventory.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Item name"},
+                        "price": {"type": "NUMBER", "description": "Item price"},
+                        "stock": {"type": "INTEGER", "description": "Stock quantity"},
+                        "category_id": {"type": "INTEGER", "description": "Category ID"},
+                    },
+                    "required": ["name", "price", "stock", "category_id"],
+                },
+            },
+            {
+                "name": "update_item_ai",
+                "description": "Update price, stock quantity, and/or category of an existing item by its ID.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "item_id": {"type": "INTEGER", "description": "ID of the item to update"},
+                        "price": {"type": "NUMBER", "description": "New price (omit if unchanged)"},
+                        "stock": {"type": "INTEGER", "description": "New stock quantity (omit if unchanged)"},
+                        "category_id": {"type": "INTEGER", "description": "New category ID (omit if unchanged)"},
+                    },
+                    "required": ["item_id"],
+                },
+            },
+            {
+                "name": "delete_item_ai",
+                "description": "Delete an item from the inventory by its ID.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "item_id": {"type": "INTEGER", "description": "ID of the item to delete"},
+                    },
+                    "required": ["item_id"],
+                },
+            },
+        ]
+    }
+]
+
+
+def list_items_ai(conn):
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("""
+            SELECT i.itemid, i.itemname, i.price, i.stockquantity, i.categoryid, c.categoryname
+            FROM items i
+            LEFT JOIN categories c ON i.categoryid = c.categoryid
+            ORDER BY i.itemid
+        """)
+        rows = cur.fetchall()
+    for row in rows:
+        row['itemname'] = decrypt_text(row['itemname'])
+    return rows
+
+
+def list_categories_ai(conn):
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT categoryid, categoryname FROM categories ORDER BY categoryid")
+        return cur.fetchall()
+
+
+def add_item_ai(conn, name, price, stock, category_id):
+    encrypted_name = encrypt_text(str(name))
+    arr = [None, encrypted_name, str(price), str(stock), str(category_id)]
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CALL manage_item(%s::varchar, %s::text[])", ('I', arr))
+        conn.commit()
+        return f"'{name}' added successfully."
+    except Exception as e:
+        conn.rollback()
+        return f"[ERROR] Could not add item: {e}"
+
+
+def update_item_ai(conn, item_id, price=None, stock=None, category_id=None):
+    arr = [
+        str(item_id),
+        None,
+        str(price) if price is not None else None,
+        str(stock) if stock is not None else None,
+        str(category_id) if category_id is not None else None,
+    ]
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CALL manage_item(%s::varchar, %s::text[])", ('U', arr))
+        conn.commit()
+        return f"Item #{item_id} updated successfully."
+    except Exception as e:
+        conn.rollback()
+        return f"[ERROR] Could not update item: {e}"
+
+
+def delete_item_ai(conn, item_id):
+    arr = [str(item_id), None, None, None, None]
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CALL manage_item(%s::varchar, %s::text[])", ('D', arr))
+        conn.commit()
+        return f"Item #{item_id} deleted successfully."
+    except Exception as e:
+        conn.rollback()
+        return f"[ERROR] Could not delete item: {e}"
+
+
+def run_tool(conn, name, args):
+    """Dispatch a single tool call from the model to the matching function."""
+    if name == "list_items":
+        return list_items_ai(conn)
+    if name == "list_categories":
+        return list_categories_ai(conn)
+    if name == "add_item_ai":
+        return add_item_ai(conn, args["name"], args["price"], args["stock"], args["category_id"])
+    if name == "update_item_ai":
+        return update_item_ai(
+            conn, args["item_id"],
+            price=args.get("price"), stock=args.get("stock"), category_id=args.get("category_id"),
+        )
+    if name == "delete_item_ai":
+        return delete_item_ai(conn, args["item_id"])
+    return f"[!] Unknown tool requested: {name}"
+
+
+def _json_safe(value):
+    """Convert Decimal/datetime/etc from psycopg rows into plain JSON-safe data."""
+    return json.loads(json.dumps(value, default=str))
+
+
+def ai_agent(conn):
+    """Take a plain-English request and let Gemini decide which tool(s) to call."""
+    print_header("Ask in plain English (Gemini AI assistant)")
+    request = input("What would you like to do? > ").strip()
+    if not request:
+        return
+
+    contents = [{"role": "user", "parts": [{"text": request}]}]
+
+    print("\nThinking...")
+    try:
+        for _ in range(6):  # safety cap on reasoning/tool-call rounds
+            model_content = gemini_generate_content(contents, tools=AGENT_TOOLS)
+            contents.append(model_content)
+            parts = model_content.get("parts", [])
+
+            function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
+            if not function_calls:
+                text = "".join(p.get("text", "") for p in parts).strip()
+                print(f"\n{text or '(no response)'}")
+                break
+
+            function_response_parts = []
+            for fc in function_calls:
+                fn_name = fc["name"]
+                fn_args = fc.get("args", {})
+                print(f"  -> calling {fn_name}({fn_args})")
+                try:
+                    result = run_tool(conn, fn_name, fn_args)
+                except Exception as e:
+                    result = f"[ERROR] {e}"
+
+                function_response_parts.append({
+                    "functionResponse": {
+                        "name": fn_name,
+                        "response": {"result": _json_safe(result)},
+                    }
+                })
+
+            contents.append({"role": "function", "parts": function_response_parts})
+        else:
+            print("\n[!] Stopped after 6 steps to avoid an endless loop.")
+    except Exception as e:
+        print(f"\n[ERROR] Could not reach Gemini API: {e}")
+        print("Make sure GEMINI_API_KEY is set and the model is available.")
+    pause()
+
+
 MENU = """
 +----------------------------------------------------------+
 |                LEDGER - INVENTORY CONSOLE                |
@@ -316,6 +612,8 @@ MENU = """
 | 6. View encrypted item names                               |
 | 7. View audit trail                                        |
 | 8. Migrate and encrypt item names                          |
+| 9. Generate item description (Gemini API)                   |
+| 10. Ask in plain English (Gemini AI assistant)              |
 | 0. Exit                                                    |
 +----------------------------------------------------------+
 """
@@ -334,6 +632,8 @@ def main():
         "6": view_encrypted,
         "7": view_audit,
         "8": lambda conn: migrate(),
+        "9": generate_description,
+        "10": ai_agent,
     }
 
     while True:
