@@ -1,10 +1,10 @@
-
 import os
 import sys
 import json
 import urllib.request
 import urllib.error
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 
 import psycopg
 from psycopg.rows import dict_row
@@ -12,9 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/models")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api")
+OPENROUTER_FALLBACK_BASE_URL = "https://openrouter.ai/api"
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 ENCRYPTION_SHIFT = 5  
 
 def encrypt_text(text, shift=ENCRYPTION_SHIFT):
@@ -308,65 +309,74 @@ def migrate():
     pause()
 
 
-# ---------------------------------------------------------
-# GEMINI API — low-level request helper
-# (uses the CURRENT Gemini API: v1beta .../{model}:generateContent
-#  — not the old, deprecated v1beta2 chat-bison-001:generateMessage
-#  endpoint, which is what was causing the "scalar field" error)
-# ---------------------------------------------------------
-def gemini_generate_content(contents, tools=None, temperature=0.7):
-    """Send a request to the Gemini generateContent endpoint and return
-    the model's response content block: {"role": "model", "parts": [...]}."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
 
-    endpoint = f"{GEMINI_BASE_URL.rstrip('/')}/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": contents,
-        "generationConfig": {"temperature": temperature},
+# ---------------------------------------------------------
+# OpenRouter API — low-level request helper
+# ---------------------------------------------------------
+
+def _openrouter_request(payload):
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not set. Add it to your .env file.")
+
+    endpoint = f"{OPENROUTER_BASE_URL.rstrip('/')}/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
     }
-    if tools:
-        payload["tools"] = tools
-
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
 
     try:
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
         with urllib.request.urlopen(req, timeout=30) as resp:
             response_text = resp.read().decode("utf-8")
     except urllib.error.HTTPError as err:
         error_body = err.read().decode("utf-8")
-        raise RuntimeError(f"Gemini API error {err.code}: {error_body}") from err
+        if err.code == 403:
+            raise RuntimeError(
+                f"OpenRouter API error {err.code}: {error_body}. "
+                "This usually means your OPENROUTER_API_KEY is invalid or does not have access to the requested model. "
+                "Set OPENROUTER_MODEL to a supported model like 'openai/gpt-4o-mini' or check your OpenRouter account access."
+            ) from err
+        raise RuntimeError(f"OpenRouter API error {err.code}: {error_body}") from err
     except urllib.error.URLError as err:
-        raise RuntimeError(f"Gemini request failed: {err.reason}") from err
+        raise RuntimeError(f"OpenRouter request failed: {err.reason}") from err
 
-    response_data = json.loads(response_text)
-    candidates = response_data.get("candidates")
-    if not candidates:
-        raise RuntimeError(f"Unexpected Gemini response: {response_data}")
-    return candidates[0]["content"]
+    return json.loads(response_text)
 
 
-def gemini_text(prompt_text, temperature=0.7):
-    """Simple single-turn text generation — used by the description feature."""
-    content = gemini_generate_content(
-        contents=[{"role": "user", "parts": [{"text": prompt_text}]}],
+def openrouter_chat(messages, temperature=0.7, tools=None, tool_choice: Optional[str] = "auto"):
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if tools is not None:
+        payload["tools"] = tools
+    if tool_choice is not None:
+        payload["tool_choice"] = tool_choice
+
+    response_data = _openrouter_request(payload)
+    choices = response_data.get("choices")
+    if not choices:
+        raise RuntimeError(f"Unexpected OpenRouter response: {response_data}")
+    return choices[0]["message"]
+
+
+def openrouter_text(prompt_text, temperature=0.7):
+    response_message = openrouter_chat(
+        messages=[{"role": "user", "content": prompt_text}],
         temperature=temperature,
+        tools=None,
+        tool_choice=None,
     )
-    parts = content.get("parts", [])
-    return "".join(p.get("text", "") for p in parts).strip()
-
-
-# ---------------------------------------------------------
-# GENERATIVE AI — Gemini writes a product description
-# ---------------------------------------------------------
+    return response_message.get("content", "").strip()
 def generate_description(conn):
-    """Ask Gemini API to write a short description for an existing item."""
-    print_header("Generate item description (Gemini API)")
+    """Ask OpenRouter API to write a short description for an existing item."""
+    print_header("Generate item description (OpenRouter API)")
     view_items_inline(conn)
     item_id = prompt_int("Item ID to generate a description for : ")
     if item_id is None:
@@ -393,76 +403,84 @@ def generate_description(conn):
         f"Reply with only the description, no extra text."
     )
 
-    print("\nAsking Gemini API...")
+    print("\nAsking OpenRouter API...")
     try:
-        description = gemini_text(prompt)
+        description = openrouter_text(prompt)
         print(f"\nGenerated description:\n  \"{description}\"")
     except Exception as e:
-        print(f"\n[ERROR] Could not reach Gemini API: {e}")
-        print("Make sure GEMINI_API_KEY is set and the model is available.")
+        print(f"\n[ERROR] Could not reach OpenRouter API: {e}")
+        print("Make sure OPENROUTER_API_KEY is set and the model is available.")
     pause()
 
 
 # ---------------------------------------------------------
-# AGENTIC AI — Gemini decides which function to call
-# (Gemini's function-calling schema uses UPPERCASE type names
-#  and a "functionDeclarations" wrapper, unlike OpenAI/Ollama's
-#  "type": "function" format.)
+# AGENTIC AI — OpenRouter decides which function to call
 # ---------------------------------------------------------
 AGENT_TOOLS = [
     {
-        "functionDeclarations": [
-            {
-                "name": "list_items",
-                "description": "List all items in the inventory with id, name, price, stock quantity, and category.",
-                "parameters": {"type": "OBJECT", "properties": {}},
-            },
-            {
-                "name": "list_categories",
-                "description": "List all categories and how many items belong to each.",
-                "parameters": {"type": "OBJECT", "properties": {}},
-            },
-            {
-                "name": "add_item_ai",
-                "description": "Add a new item to the inventory.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "name": {"type": "STRING", "description": "Item name"},
-                        "price": {"type": "NUMBER", "description": "Item price"},
-                        "stock": {"type": "INTEGER", "description": "Stock quantity"},
-                        "category_id": {"type": "INTEGER", "description": "Category ID"},
-                    },
-                    "required": ["name", "price", "stock", "category_id"],
+        "type": "function",
+        "function": {
+            "name": "list_items",
+            "description": "List all items in the inventory with id, name, price, stock quantity, and category.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_categories",
+            "description": "List all categories and how many items belong to each.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_item_ai",
+            "description": "Add a new item to the inventory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Item name"},
+                    "price": {"type": "number", "description": "Item price"},
+                    "stock": {"type": "integer", "description": "Stock quantity"},
+                    "category_id": {"type": "integer", "description": "Category ID"},
                 },
+                "required": ["name", "price", "stock", "category_id"],
             },
-            {
-                "name": "update_item_ai",
-                "description": "Update price, stock quantity, and/or category of an existing item by its ID.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "item_id": {"type": "INTEGER", "description": "ID of the item to update"},
-                        "price": {"type": "NUMBER", "description": "New price (omit if unchanged)"},
-                        "stock": {"type": "INTEGER", "description": "New stock quantity (omit if unchanged)"},
-                        "category_id": {"type": "INTEGER", "description": "New category ID (omit if unchanged)"},
-                    },
-                    "required": ["item_id"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_item_ai",
+            "description": "Update price, stock quantity, and/or category of an existing item by its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer", "description": "ID of the item to update"},
+                    "price": {"type": "number", "description": "New price (omit if unchanged)"},
+                    "stock": {"type": "integer", "description": "New stock quantity (omit if unchanged)"},
+                    "category_id": {"type": "integer", "description": "New category ID (omit if unchanged)"},
                 },
+                "required": ["item_id"],
             },
-            {
-                "name": "delete_item_ai",
-                "description": "Delete an item from the inventory by its ID.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "item_id": {"type": "INTEGER", "description": "ID of the item to delete"},
-                    },
-                    "required": ["item_id"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_item_ai",
+            "description": "Delete an item from the inventory by its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer", "description": "ID of the item to delete"},
                 },
+                "required": ["item_id"],
             },
-        ]
-    }
+        },
+    },
 ]
 
 
@@ -553,50 +571,59 @@ def _json_safe(value):
 
 
 def ai_agent(conn):
-    """Take a plain-English request and let Gemini decide which tool(s) to call."""
-    print_header("Ask in plain English (Gemini AI assistant)")
+    """Take a plain-English request and let OpenRouter decide which tool(s) to call."""
+    print_header("Ask in plain English (OpenRouter AI assistant)")
     request = input("What would you like to do? > ").strip()
     if not request:
         return
 
-    contents = [{"role": "user", "parts": [{"text": request}]}]
+    messages = [{"role": "user", "content": request}]
 
     print("\nThinking...")
     try:
         for _ in range(6):  # safety cap on reasoning/tool-call rounds
-            model_content = gemini_generate_content(contents, tools=AGENT_TOOLS)
-            contents.append(model_content)
-            parts = model_content.get("parts", [])
+            model_message = openrouter_chat(messages, tools=AGENT_TOOLS)
 
-            function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
-            if not function_calls:
-                text = "".join(p.get("text", "") for p in parts).strip()
+            tool_calls = model_message.get("tool_calls")
+            if not tool_calls:
+                text = model_message.get("content", "").strip()
                 print(f"\n{text or '(no response)'}")
                 break
 
-            function_response_parts = []
-            for fc in function_calls:
-                fn_name = fc["name"]
-                fn_args = fc.get("args", {})
+            # Echo the assistant's turn (including its requested tool calls) back into
+            # the conversation so the model has full context on the next round.
+            messages.append({
+                "role": "assistant",
+                "content": model_message.get("content"),
+                "tool_calls": tool_calls,
+            })
+
+            for tool_call in tool_calls:
+                fn = tool_call.get("function", {})
+                fn_name = fn.get("name")
+                raw_args = fn.get("arguments", "{}")
+                try:
+                    fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                except json.JSONDecodeError:
+                    fn_args = {}
+
                 print(f"  -> calling {fn_name}({fn_args})")
                 try:
                     result = run_tool(conn, fn_name, fn_args)
                 except Exception as e:
                     result = f"[ERROR] {e}"
 
-                function_response_parts.append({
-                    "functionResponse": {
-                        "name": fn_name,
-                        "response": {"result": _json_safe(result)},
-                    }
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id"),
+                    "name": fn_name,
+                    "content": json.dumps(_json_safe(result)),
                 })
-
-            contents.append({"role": "function", "parts": function_response_parts})
         else:
             print("\n[!] Stopped after 6 steps to avoid an endless loop.")
     except Exception as e:
-        print(f"\n[ERROR] Could not reach Gemini API: {e}")
-        print("Make sure GEMINI_API_KEY is set and the model is available.")
+        print(f"\n[ERROR] Could not reach OpenRouter API: {e}")
+        print("Make sure OPENROUTER_API_KEY is set and the model is available.")
     pause()
 
 
@@ -612,8 +639,8 @@ MENU = """
 | 6. View encrypted item names                               |
 | 7. View audit trail                                        |
 | 8. Migrate and encrypt item names                          |
-| 9. Generate item description (Gemini API)                   |
-| 10. Ask in plain English (Gemini AI assistant)              |
+| 9. Generate item description (OpenRouter API)                |
+| 10. Ask in plain English (OpenRouter AI assistant)           |
 | 0. Exit                                                    |
 +----------------------------------------------------------+
 """
