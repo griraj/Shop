@@ -31,6 +31,13 @@ Create Table items_audit (
     changed_at Timestamp Default Now()
 );
 
+-- Tracks one-off migrations (like the itemname encryption pass) so they
+-- can never be silently re-run and double-shift already-encrypted data.
+Create Table If Not Exists migration_log (
+    migration_name Varchar(50) Primary Key,
+    applied_at Timestamp Default Now()
+);
+
 Create or Replace Function log_item_changes()
 Returns Trigger As $$
 Begin
@@ -138,9 +145,9 @@ Insert Into Categories (categoryName) Values ('Electronics');
 Insert Into Categories (categoryName) Values ('Groceries');
 Insert Into Categories (categoryName) Values ('Stationery');
 
-Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('Laptop', 85000, 15, 1);
-Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('Charger', 14200, 45, 2);
-Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('NotePad', 4500.50, 70, 3);
+--Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('Laptop', 85000, 15, 1);
+--Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('Charger', 14200, 45, 2);
+--Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('NotePad', 4500.50, 70, 3);
 --Insert Into Items (itemName, price, stockQuantity, categoryID) Values ('Mobile Phone', 45000, 25, 1);
 
 Call manage_item('I', Array[Null, 'Keyboard', '3200', '30', '1']);

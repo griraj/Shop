@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger — Inventory &amp; AI Clerk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Serif+4:wght@400;600;700&family=Courier+Prime:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ LEFT: PAPER LEDGER ============ -->
+  <section class="ledger">
+    <header class="ledger-head">
+      <h1>Stock Ledger</h1>
+      <p class="ledger-sub">Manual record of items &amp; categories</p>
+    </header>
+
+    <nav class="ledger-tabs" id="ledgerTabs">
+      <button class="tab-btn active" data-tab="items">Items</button>
+      <button class="tab-btn" data-tab="categories">Categories</button>
+      <button class="tab-btn" data-tab="audit">Audit Trail</button>
+    </nav>
+
+    <!-- ITEMS TAB -->
+    <div class="tab-panel active" id="tab-items">
+      <div class="panel-scroll">
+        <table class="ledger-table" id="itemsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item</th>
+              <th>Category</th>
+              <th class="num">Price</th>
+              <th class="num">Stock</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody">
+            <tr><td colspan="6" class="loading-row">Loading ledger…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <details class="entry-form" id="addItemDetails">
+        <summary>+ New entry</summary>
+        <form id="addItemForm">
+          <div class="field-row">
+            <label>Item name<input type="text" id="newItemName" required></label>
+            <label>Category
+              <select id="newItemCategory" required></select>
+            </label>
+          </div>
+          <div class="field-row">
+            <label>Price<input type="number" step="0.01" id="newItemPrice" required></label>
+            <label>Stock qty<input type="number" id="newItemStock" required></label>
+          </div>
+          <button type="submit" class="stamp-btn">Record entry</button>
+          <span class="form-msg" id="addItemMsg"></span>
+        </form>
+      </details>
+    </div>
+
+    <!-- CATEGORIES TAB -->
+    <div class="tab-panel" id="tab-categories">
+      <div class="panel-scroll">
+        <table class="ledger-table" id="categoriesTable">
+          <thead>
+            <tr><th>#</th><th>Category</th><th class="num">Items</th></tr>
+          </thead>
+          <tbody id="categoriesBody">
+            <tr><td colspan="3" class="loading-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- AUDIT TAB -->
+    <div class="tab-panel" id="tab-audit">
+      <div class="panel-scroll">
+        <table class="ledger-table" id="auditTable">
+          <thead>
+            <tr><th>#</th><th>Item</th><th>Action</th><th class="num">Old</th><th class="num">New</th><th>When</th></tr>
+          </thead>
+          <tbody id="auditBody">
+            <tr><td colspan="6" class="loading-row">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SPINE / DIVIDER ============ -->
+  <div class="spine" aria-hidden="true">
+    <span class="rivet"></span>
+    <span class="rivet"></span>
+    <span class="rivet"></span>
+    <span class="rivet"></span>
+    <span class="rivet"></span>
+  </div>
+
+  <!-- ============ RIGHT: TERMINAL / AI CLERK ============ -->
+  <section class="terminal">
+    <header class="terminal-head">
+      <span class="terminal-dot"></span>
+      <span class="terminal-title">ai_clerk<span class="cursor-blink">_</span></span>
+      <button class="reset-btn" id="resetChat" title="Clear conversation">reset</button>
+    </header>
+
+    <div class="terminal-log" id="chatLog">
+      <div class="log-line system">AI clerk ready. Ask about stock, add items, or update the ledger in plain English.</div>
+    </div>
+
+    <form class="terminal-input-row" id="chatForm">
+      <span class="prompt-glyph">&gt;</span>
+      <input type="text" id="chatInput" autocomplete="off" placeholder="e.g. add 20 units of Mouse at 2200 in Electronics" />
+      <button type="submit" class="send-btn">Send</button>
+    </form>
+  </section>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

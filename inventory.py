@@ -267,52 +267,104 @@ def prompt_int(label, allow_default=None):
         return None
 
 
+MIGRATION_NAME = "itemname_encryption"
+
+
+def _ensure_migration_log(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS migration_log (
+                migration_name VARCHAR(50) PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    conn.commit()
+
+
+def _migration_already_applied(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM migration_log WHERE migration_name = %s",
+            (MIGRATION_NAME,),
+        )
+        return cur.fetchone() is not None
+
+
+def _mark_migration_applied(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO migration_log (migration_name)
+            VALUES (%s)
+            ON CONFLICT (migration_name) DO UPDATE SET applied_at = NOW()
+        """, (MIGRATION_NAME,))
+    conn.commit()
+
+
 def migrate():
-    """Migrate and encrypt all existing item names in the database."""
+    """Migrate and encrypt all existing item names in the database.
+
+    This is meant to run exactly once, against legacy plain-text names.
+    Every item added through add_item()/add_item_ai() is already encrypted
+    at insert time, so re-running this would encrypt already-encrypted
+    names again -- shifting them a second time and corrupting the data.
+    A migration_log row prevents that from happening silently.
+    """
+    conn = get_connection()
+    _ensure_migration_log(conn)
+
+    if _migration_already_applied(conn):
+        print("\n[!] Item names were already migrated & encrypted previously.")
+        print("    Running this again would double-encrypt (shift again) every")
+        print("    name and corrupt them -- items are already encrypted on insert.")
+        force = input("    Type FORCE to run anyway (not recommended), or press Enter to cancel: ").strip()
+        if force != "FORCE":
+            print("Cancelled.")
+            conn.close()
+            pause()
+            return
+
     confirm = input("This will encrypt all existing item names. Continue? (yes/no): ").strip().lower()
     if confirm != "yes":
         print("Cancelled.")
-        pause()
-        return
-    
-    conn = get_connection()
-    print("Connected to database. Fetching all items...")
-    
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT itemid, itemname FROM items")
-        items = cur.fetchall()
-    
-    print(f"Found {len(items)} items to encrypt.")
-    
-    if len(items) == 0:
-        print("No items to encrypt.")
         conn.close()
         pause()
         return
-    
+
+    print("Connected to database. Fetching all items...")
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT itemid, itemname FROM items")
+        items = cur.fetchall()
+
+    print(f"Found {len(items)} items to encrypt.")
+
+    if len(items) == 0:
+        print("No items to encrypt.")
+        _mark_migration_applied(conn)
+        conn.close()
+        pause()
+        return
+
     # Update each item with encrypted name
     updated_count = 0
     for item in items:
         encrypted_name = encrypt_text(item['itemname'])
         print(f"  Encrypting: {item['itemname']} -> {encrypted_name}")
-        
+
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE items SET itemname = %s WHERE itemid = %s",
                 (encrypted_name, item['itemid'])
             )
         updated_count += 1
-    
+
     conn.commit()
+    _mark_migration_applied(conn)
     print(f"\n✓ Successfully encrypted {updated_count} items!")
+    print("  This migration is now marked as applied and won't run again by accident.")
     conn.close()
     pause()
 
-
-
-# ---------------------------------------------------------
-# OpenRouter API — low-level request helper
-# ---------------------------------------------------------
 
 def _openrouter_request(payload):
     if not OPENROUTER_API_KEY:
@@ -412,10 +464,6 @@ def generate_description(conn):
         print("Make sure OPENROUTER_API_KEY is set and the model is available.")
     pause()
 
-
-# ---------------------------------------------------------
-# AGENTIC AI — OpenRouter decides which function to call
-# ---------------------------------------------------------
 AGENT_TOOLS = [
     {
         "type": "function",
