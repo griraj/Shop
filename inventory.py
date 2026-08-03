@@ -16,24 +16,6 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api")
 OPENROUTER_FALLBACK_BASE_URL = "https://openrouter.ai/api"
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-ENCRYPTION_SHIFT = 5  
-
-def encrypt_text(text, shift=ENCRYPTION_SHIFT):
-    result = []
-    for char in text:
-        if char.isalpha():
-            if char.isupper():
-                result.append(chr((ord(char) - ord('A') + shift) % 26 + ord('A')))
-            else:
-                result.append(chr((ord(char) - ord('a') + shift) % 26 + ord('a')))
-        else:
-            result.append(char)
-    return ''.join(result)
-
-
-def decrypt_text(text, shift=ENCRYPTION_SHIFT):
-    return encrypt_text(text, -shift)
-
 
 def get_connection():
     try:
@@ -86,9 +68,6 @@ def view_items(conn):
             ORDER BY i.itemid
         """)
         rows = cur.fetchall()
-    # Decrypt item names for display
-    for row in rows:
-        row['itemname'] = decrypt_text(row['itemname'])
     print_table(rows, ["itemid", "itemname", "price", "stockquantity", "categoryname"])
     pause()
 
@@ -129,8 +108,7 @@ def add_item(conn):
     if category_id is None:
         return
 
-    encrypted_name = encrypt_text(name)
-    arr = [None, encrypted_name, str(price), str(stock), str(category_id)]
+    arr = [None, name, str(price), str(stock), str(category_id)]
 
     try:
         with conn.cursor() as cur:
@@ -200,23 +178,6 @@ def delete_item(conn):
     pause()
 
 
-def view_encrypted(conn):
-    print_header("Encrypted item names")
-    shift = prompt_int("Shift value (e.g. 5) :  ", allow_default=5)
-    if shift is None:
-        shift = 5
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT itemid, itemname FROM items ORDER BY itemid")
-        rows = cur.fetchall()
-
-    for row in rows:
-        decrypted = decrypt_text(row['itemname'])
-        row['decrypted_name'] = decrypted
-        row['re_encrypted'] = encrypt_text(decrypted, shift)
-    print_table(rows, ["itemid", "decrypted_name", "re_encrypted"])
-    pause()
-
-
 def view_audit(conn):
     print_header("Audit trail (most recent first)")
     with conn.cursor(row_factory=dict_row) as cur:
@@ -230,9 +191,6 @@ def view_items_inline(conn):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT itemid, itemname, price, stockquantity FROM items ORDER BY itemid")
         rows = cur.fetchall()
-    # Decrypt item names for display
-    for row in rows:
-        row['itemname'] = decrypt_text(row['itemname'])
     print_table(rows, ["itemid", "itemname", "price", "stockquantity"])
 
 
@@ -265,105 +223,6 @@ def prompt_int(label, allow_default=None):
         if allow_default is None:
             pause()
         return None
-
-
-MIGRATION_NAME = "itemname_encryption"
-
-
-def _ensure_migration_log(conn):
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS migration_log (
-                migration_name VARCHAR(50) PRIMARY KEY,
-                applied_at TIMESTAMP DEFAULT NOW()
-            )
-        """)
-    conn.commit()
-
-
-def _migration_already_applied(conn):
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM migration_log WHERE migration_name = %s",
-            (MIGRATION_NAME,),
-        )
-        return cur.fetchone() is not None
-
-
-def _mark_migration_applied(conn):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO migration_log (migration_name)
-            VALUES (%s)
-            ON CONFLICT (migration_name) DO UPDATE SET applied_at = NOW()
-        """, (MIGRATION_NAME,))
-    conn.commit()
-
-
-def migrate():
-    """Migrate and encrypt all existing item names in the database.
-
-    This is meant to run exactly once, against legacy plain-text names.
-    Every item added through add_item()/add_item_ai() is already encrypted
-    at insert time, so re-running this would encrypt already-encrypted
-    names again -- shifting them a second time and corrupting the data.
-    A migration_log row prevents that from happening silently.
-    """
-    conn = get_connection()
-    _ensure_migration_log(conn)
-
-    if _migration_already_applied(conn):
-        print("\n[!] Item names were already migrated & encrypted previously.")
-        print("    Running this again would double-encrypt (shift again) every")
-        print("    name and corrupt them -- items are already encrypted on insert.")
-        force = input("    Type FORCE to run anyway (not recommended), or press Enter to cancel: ").strip()
-        if force != "FORCE":
-            print("Cancelled.")
-            conn.close()
-            pause()
-            return
-
-    confirm = input("This will encrypt all existing item names. Continue? (yes/no): ").strip().lower()
-    if confirm != "yes":
-        print("Cancelled.")
-        conn.close()
-        pause()
-        return
-
-    print("Connected to database. Fetching all items...")
-
-    with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT itemid, itemname FROM items")
-        items = cur.fetchall()
-
-    print(f"Found {len(items)} items to encrypt.")
-
-    if len(items) == 0:
-        print("No items to encrypt.")
-        _mark_migration_applied(conn)
-        conn.close()
-        pause()
-        return
-
-    # Update each item with encrypted name
-    updated_count = 0
-    for item in items:
-        encrypted_name = encrypt_text(item['itemname'])
-        print(f"  Encrypting: {item['itemname']} -> {encrypted_name}")
-
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE items SET itemname = %s WHERE itemid = %s",
-                (encrypted_name, item['itemid'])
-            )
-        updated_count += 1
-
-    conn.commit()
-    _mark_migration_applied(conn)
-    print(f"\n✓ Successfully encrypted {updated_count} items!")
-    print("  This migration is now marked as applied and won't run again by accident.")
-    conn.close()
-    pause()
 
 
 def _openrouter_request(payload):
@@ -427,7 +286,6 @@ def openrouter_text(prompt_text, temperature=0.7):
     )
     return response_message.get("content", "").strip()
 def generate_description(conn):
-    """Ask OpenRouter API to write a short description for an existing item."""
     print_header("Generate item description (OpenRouter API)")
     view_items_inline(conn)
     item_id = prompt_int("Item ID to generate a description for : ")
@@ -448,7 +306,7 @@ def generate_description(conn):
         pause()
         return
 
-    item_name = decrypt_text(row['itemname'])
+    item_name = row['itemname']
     prompt = (
         f"Write one short, appealing product description (max 25 words) for an item "
         f"called '{item_name}' in the '{row['categoryname']}' category. "
@@ -541,8 +399,6 @@ def list_items_ai(conn):
             ORDER BY i.itemid
         """)
         rows = cur.fetchall()
-    for row in rows:
-        row['itemname'] = decrypt_text(row['itemname'])
     return rows
 
 
@@ -553,8 +409,7 @@ def list_categories_ai(conn):
 
 
 def add_item_ai(conn, name, price, stock, category_id):
-    encrypted_name = encrypt_text(str(name))
-    arr = [None, encrypted_name, str(price), str(stock), str(category_id)]
+    arr = [None, str(name), str(price), str(stock), str(category_id)]
     try:
         with conn.cursor() as cur:
             cur.execute("CALL manage_item(%s::varchar, %s::text[])", ('I', arr))
@@ -596,7 +451,6 @@ def delete_item_ai(conn, item_id):
 
 
 def run_tool(conn, name, args):
-    """Dispatch a single tool call from the model to the matching function."""
     if name == "list_items":
         return list_items_ai(conn)
     if name == "list_categories":
@@ -614,12 +468,10 @@ def run_tool(conn, name, args):
 
 
 def _json_safe(value):
-    """Convert Decimal/datetime/etc from psycopg rows into plain JSON-safe data."""
     return json.loads(json.dumps(value, default=str))
 
 
 def ai_agent(conn):
-    """Take a plain-English request and let OpenRouter decide which tool(s) to call."""
     print_header("Ask in plain English (OpenRouter AI assistant)")
     request = input("What would you like to do? > ").strip()
     if not request:
@@ -638,8 +490,7 @@ def ai_agent(conn):
                 print(f"\n{text or '(no response)'}")
                 break
 
-            # Echo the assistant's turn (including its requested tool calls) back into
-            # the conversation so the model has full context on the next round.
+            # Echo the assistant's turn (including its requested tool calls) back into conversation
             messages.append({
                 "role": "assistant",
                 "content": model_message.get("content"),
@@ -679,17 +530,15 @@ MENU = """
 +----------------------------------------------------------+
 |                LEDGER - INVENTORY CONSOLE                |
 +----------------------------------------------------------+
-| 1. View items                                             |
-| 2. View categories                                        |
-| 3. Add item                                                |
-| 4. Update item                                             |
-| 5. Delete item                                             |
-| 6. View encrypted item names                               |
-| 7. View audit trail                                        |
-| 8. Migrate and encrypt item names                          |
-| 9. Generate item description (OpenRouter API)                |
-| 10. Ask in plain English (OpenRouter AI assistant)           |
-| 0. Exit                                                    |
+| i View items                                               |
+| i View categories                                          |
+| i Add item                                                 |
+| i Update item                                              |
+| i Delete item                                              |
+| i View audit trail                                         |
+| i Generate item description (OpenRouter API)                 |
+| i Ask in plain English (OpenRouter AI assistant)            |
+| i Exit                                                     |
 +----------------------------------------------------------+
 """
 
@@ -704,11 +553,9 @@ def main():
         "3": add_item,
         "4": update_item,
         "5": delete_item,
-        "6": view_encrypted,
-        "7": view_audit,
-        "8": lambda conn: migrate(),
-        "9": generate_description,
-        "10": ai_agent,
+        "6": view_audit,
+        "7": generate_description,
+        "8": ai_agent,
     }
 
     while True:

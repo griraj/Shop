@@ -1,5 +1,3 @@
-
-
 import os
 import sys
 import json
@@ -15,39 +13,13 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-ENCRYPTION_SHIFT = 5
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
 )
 
-
-# ---------------------------------------------------------------------
-# Encryption (same Caesar-cipher scheme as the original console app)
-# ---------------------------------------------------------------------
-
-def encrypt_text(text, shift=ENCRYPTION_SHIFT):
-    result = []
-    for char in text:
-        if char.isalpha():
-            if char.isupper():
-                result.append(chr((ord(char) - ord('A') + shift) % 26 + ord('A')))
-            else:
-                result.append(chr((ord(char) - ord('a') + shift) % 26 + ord('a')))
-        else:
-            result.append(char)
-    return ''.join(result)
-
-
-def decrypt_text(text, shift=ENCRYPTION_SHIFT):
-    return encrypt_text(text, -shift)
-
-
-# ---------------------------------------------------------------------
 # Database connection
-# ---------------------------------------------------------------------
-
 def get_connection():
     return psycopg.connect(
         host=os.getenv("PGHOST", "localhost"),
@@ -58,15 +30,12 @@ def get_connection():
     )
 
 
+# JSON conversion helper
 def _json_safe(value):
-    """Convert Decimal/datetime/etc from psycopg rows into plain JSON-safe data."""
     return json.loads(json.dumps(value, default=str))
 
 
-# ---------------------------------------------------------------------
-# Inventory data access (used by both the REST endpoints and the agent)
-# ---------------------------------------------------------------------
-
+# Inventory data access
 def list_items():
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -77,8 +46,6 @@ def list_items():
                 ORDER BY i.itemid
             """)
             rows = cur.fetchall()
-    for row in rows:
-        row['itemname'] = decrypt_text(row['itemname'])
     return _json_safe(rows)
 
 
@@ -108,8 +75,7 @@ def list_audit(limit=25):
 
 
 def add_item(name, price, stock, category_id):
-    encrypted_name = encrypt_text(str(name))
-    arr = [None, encrypted_name, str(price), str(stock), str(category_id)]
+    arr = [None, str(name), str(price), str(stock), str(category_id)]
     with get_connection() as conn:
         try:
             with conn.cursor() as cur:
@@ -153,11 +119,7 @@ def delete_item(item_id):
             return {"ok": False, "message": f"Could not delete item: {e}"}
 
 
-# ---------------------------------------------------------------------
-# AI agent (tool-calling), using the OpenAI SDK pointed at OpenRouter,
-# same pattern as main.py / inventory.py's ai_agent()
-# ---------------------------------------------------------------------
-
+# AI agent tool definitions
 AGENT_TOOLS = [
     {
         "type": "function",
@@ -225,9 +187,8 @@ AGENT_TOOLS = [
     },
 ]
 
-
+# Tool dispatcher
 def run_tool(name, args):
-    """Dispatch a single tool call from the model to the matching function."""
     if name == "list_items":
         return list_items()
     if name == "list_categories":
@@ -253,16 +214,8 @@ SYSTEM_PROMPT = (
     "categories, summarize them clearly instead of dumping raw JSON."
 )
 
-
+# Run agent loop
 def run_agent(user_message, history=None):
-    """
-    Run one turn of the tool-calling agent loop.
-
-    `history` is a list of prior {role, content} messages (excluding the system
-    prompt) so the frontend can maintain a running conversation. Returns a dict
-    with the final reply text and a trace of any tool calls made, so the UI can
-    show what the agent actually did.
-    """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     if history:
         messages.extend(history)
@@ -270,7 +223,7 @@ def run_agent(user_message, history=None):
 
     trace = []
 
-    for _ in range(6):  # safety cap on reasoning/tool-call rounds
+    for _ in range(6):
         response = client.chat.completions.create(
             model=OPENROUTER_MODEL,
             messages=messages,

@@ -2,8 +2,6 @@
 
 Drop Trigger if Exists items_trigger on items;
 Drop Function if Exists log_item_changes();
-Drop Function if Exists encrypt(Varchar, Integer);
-Drop Function if Exists decrypt(Varchar, Integer);
 Drop Procedure if Exists manage_item(Varchar, Text[]);
 Drop Table if Exists items_audit;
 Drop Table if Exists items;
@@ -29,13 +27,6 @@ Create Table items_audit (
     old_price Numeric(10, 2),
     new_price Numeric(10, 2),
     changed_at Timestamp Default Now()
-);
-
--- Tracks one-off migrations (like the itemname encryption pass) so they
--- can never be silently re-run and double-shift already-encrypted data.
-Create Table If Not Exists migration_log (
-    migration_name Varchar(50) Primary Key,
-    applied_at Timestamp Default Now()
 );
 
 Create or Replace Function log_item_changes()
@@ -105,42 +96,6 @@ Begin
 End;
 $$;
 
-Create or Replace Function encrypt(p_text Varchar, p_shift Integer)
-Returns Varchar
-Language plpgsql
-As $$
-Declare
-    v_result Varchar := '';
-    v_char varchar;
-    v_code Integer;
-Begin
-    For i In 1..Length(p_text) Loop
-        v_char := Substring(p_text From i For 1);
-        v_code := Ascii(v_char);
-
-        If v_code Between 65 And 90 Then         
-            v_result := v_result || Chr(((v_code - 65 + p_shift) % 26 + 26) % 26 + 65);
-
-        Elsif v_code Between 97 And 122 Then       
-            v_result := v_result || Chr(((v_code - 97 + p_shift) % 26 + 26) % 26 + 97);
-
-        Else
-            v_result := v_result || v_char;        
-        End If;
-    End Loop;
-    Return v_result;
-End;
-$$;
-
-Create or Replace Function decrypt(p_text Varchar, p_shift Integer)
-Returns Varchar
-Language plpgsql
-As $$
-Begin
-    Return encrypt(p_text, -p_shift);  
-End;
-$$;
-
 Insert Into Categories (categoryName) Values ('Electronics');
 Insert Into Categories (categoryName) Values ('Groceries');
 Insert Into Categories (categoryName) Values ('Stationery');
@@ -155,9 +110,6 @@ Call manage_item('I', Array[Null, 'Mouse', '2200', '25', '1']);
 Call manage_item('U', Array[Null, 'Laptop', '90000']);
 Call manage_item('U', Array['3', Null, '5000']);
 Call manage_item('D', Array[Null, 'NotePad']);
-
-Select itemName, encrypt(itemName, 5) As hidden_name
-From Items;
 
 Select * From categories;
 Select * From Items;

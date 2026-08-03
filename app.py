@@ -9,12 +9,10 @@ from pydantic import BaseModel
 
 import core
 
+# FastAPI app
 app = FastAPI(title="Ledger — Inventory + AI Clerk")
 
-
-# ---------------------------------------------------------------------
 # Request/response schemas
-# ---------------------------------------------------------------------
 
 class NewItem(BaseModel):
     name: str
@@ -37,11 +35,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, Any]]] = None
-
-
-# ---------------------------------------------------------------------
 # Inventory endpoints
-# ---------------------------------------------------------------------
 
 @app.get("/api/items")
 def get_items():
@@ -94,11 +88,7 @@ def remove_item(item_id: int):
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["message"])
     return result
-
-
-# ---------------------------------------------------------------------
 # AI agent endpoint
-# ---------------------------------------------------------------------
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
@@ -106,11 +96,7 @@ def chat(req: ChatRequest):
         return core.run_agent(req.message, history=req.history)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------
 # Frontend
-# ---------------------------------------------------------------------
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

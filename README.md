@@ -12,7 +12,7 @@ Also included: `inventory.py`, the original terminal-based console version of th
 ```
 Shop/
   app.py             FastAPI backend — REST endpoints + serves the frontend
-  core.py            Shared DB/encryption/agent logic used by the web app
+  core.py            Shared DB/agent logic used by the web app
   inventory.py        Standalone terminal console app (same DB, same agent, menu-driven)
   main.sql            Database schema: tables, trigger, manage_item procedure, migration_log
   requirements.txt
@@ -42,7 +42,7 @@ Shop/
    ```
    Fill in your real Postgres credentials and OpenRouter key.
 
-3. **Create the database schema** — run `main.sql` against your Postgres database once (creates `items`, `categories`, `items_audit`, the `manage_item` procedure, and `migration_log`).
+3. **Create the database schema** — run `main.sql` against your Postgres database once (creates `items`, `categories`, `items_audit`, and the `manage_item` procedure).
 
 4. **Run the web app:**
    ```
@@ -57,7 +57,7 @@ Shop/
 
 ## How it's wired together
 
-- `core.py` holds the actual logic — DB queries, the Caesar-cipher encrypt/decrypt, and the `run_agent()` tool-calling loop.
+- `core.py` holds the actual logic — DB queries and the `run_agent()` tool-calling loop.
 - `app.py` is a thin REST layer over `core.py` (`GET /api/items`, `POST /api/chat`, etc.), and serves the frontend.
 - `static/app.js` calls those endpoints with `fetch()` — no page reloads, single-page app.
 - The AI clerk keeps conversation history in the browser and sends it back with each message, so the model has memory of the conversation.
@@ -75,4 +75,3 @@ Removed from the original working folder (both were no longer needed):
 
 - Add an "Edit" button next to each item row in the web UI (currently only Delete is wired up) — the pattern is the same as Add: a small form calling `PUT /api/items/{id}`.
 - Add authentication before deploying this anywhere public — right now anyone who can reach the server can read/write your inventory and spend your OpenRouter credits.
-- Port `migrate()` / `view_encrypted()` from `inventory.py` into the web app if you want that functionality available from the browser too.

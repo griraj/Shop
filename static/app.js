@@ -1,26 +1,13 @@
-// ---------------------------------------------------------------------
-// Tabs
-// ---------------------------------------------------------------------
-document.querySelectorAll(".tab-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-  });
-});
-
-// ---------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------
 function escapeHtml(str) {
   const d = document.createElement("div");
   d.textContent = String(str ?? "");
   return d.innerHTML;
 }
 
+// Format money
 function money(n) {
-  return "₹" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "PKR " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function api(path, options = {}) {
@@ -35,22 +22,53 @@ async function api(path, options = {}) {
   return data;
 }
 
-// ---------------------------------------------------------------------
-// Items
-// ---------------------------------------------------------------------
+// Drawer open/close
+const drawer = document.getElementById("drawer");
+const drawerTab = document.getElementById("drawerTab");
+const drawerScrim = document.getElementById("drawerScrim");
+const drawerClose = document.getElementById("drawerClose");
+
+function openDrawer() {
+  drawer.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+  drawerTab.setAttribute("aria-expanded", "true");
+  drawerScrim.classList.add("show");
+}
+function closeDrawer() {
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+  drawerTab.setAttribute("aria-expanded", "false");
+  drawerScrim.classList.remove("show");
+}
+drawerTab.addEventListener("click", () => {
+  drawer.classList.contains("open") ? closeDrawer() : openDrawer();
+});
+drawerClose.addEventListener("click", closeDrawer);
+drawerScrim.addEventListener("click", closeDrawer);
+
+// Drawer inner tabs
+document.querySelectorAll(".dtab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".dtab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".drawer-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("dpanel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+// Ledger data (items / categories / audit)
 let categoriesCache = [];
 
 async function loadCategories() {
   categoriesCache = await api("/api/categories");
-  const body = document.getElementById("categoriesBody");
-  body.innerHTML = categoriesCache.length
+  const list = document.getElementById("categoriesList");
+  list.innerHTML = categoriesCache.length
     ? categoriesCache.map(c => `
-        <tr>
-          <td>${c.categoryid}</td>
-          <td>${escapeHtml(c.categoryname)}</td>
-          <td class="num">${c.item_count}</td>
-        </tr>`).join("")
-    : `<tr><td colspan="3" class="loading-row">No categories yet.</td></tr>`;
+        <li>
+          <span>${escapeHtml(c.categoryname)}</span>
+          <span class="c-count">${c.item_count} item${c.item_count === 1 ? "" : "s"}</span>
+        </li>`).join("")
+    : `<li class="tag-empty">No categories yet.</li>`;
 
   const select = document.getElementById("newItemCategory");
   select.innerHTML = categoriesCache.map(c => `<option value="${c.categoryid}">${escapeHtml(c.categoryname)}</option>`).join("");
@@ -58,20 +76,21 @@ async function loadCategories() {
 
 async function loadItems() {
   const items = await api("/api/items");
-  const body = document.getElementById("itemsBody");
-  body.innerHTML = items.length
+  const grid = document.getElementById("itemsGrid");
+  grid.innerHTML = items.length
     ? items.map(i => `
-        <tr data-id="${i.itemid}">
-          <td>${i.itemid}</td>
-          <td>${escapeHtml(i.itemname)}</td>
-          <td>${escapeHtml(i.categoryname || "—")}</td>
-          <td class="num">${money(i.price)}</td>
-          <td class="num">${i.stockquantity}</td>
-          <td><button class="row-del" data-id="${i.itemid}">Delete</button></td>
-        </tr>`).join("")
-    : `<tr><td colspan="6" class="loading-row">Ledger is empty. Add your first entry below.</td></tr>`;
+        <div class="tag-card" data-id="${i.itemid}">
+          <span class="tag-hole"></span>
+          <div class="tag-info">
+            <div class="tag-name">${escapeHtml(i.itemname)}</div>
+            <div class="tag-meta">${escapeHtml(i.categoryname || "uncategorized")} · stock ${i.stockquantity}</div>
+          </div>
+          <div class="tag-price">${money(i.price)}</div>
+          <button class="tag-del" data-id="${i.itemid}">Del</button>
+        </div>`).join("")
+    : `<div class="tag-empty">No tags hanging yet. Write one below.</div>`;
 
-  body.querySelectorAll(".row-del").forEach(btn => {
+  grid.querySelectorAll(".tag-del").forEach(btn => {
     btn.addEventListener("click", async () => {
       if (!confirm(`Delete item #${btn.dataset.id}? This cannot be undone.`)) return;
       try {
@@ -86,18 +105,17 @@ async function loadItems() {
 
 async function loadAudit() {
   const rows = await api("/api/audit");
-  const body = document.getElementById("auditBody");
-  body.innerHTML = rows.length
+  const list = document.getElementById("auditList");
+  list.innerHTML = rows.length
     ? rows.map(r => `
-        <tr>
-          <td>${r.audit_id}</td>
-          <td>${r.item_id ?? "—"}</td>
-          <td><span class="action-badge ${r.action_type?.toLowerCase()}">${r.action_type}</span></td>
-          <td class="num">${r.old_price != null ? money(r.old_price) : "—"}</td>
-          <td class="num">${r.new_price != null ? money(r.new_price) : "—"}</td>
-          <td>${r.changed_at ? new Date(r.changed_at).toLocaleString() : "—"}</td>
-        </tr>`).join("")
-    : `<tr><td colspan="6" class="loading-row">No changes recorded yet.</td></tr>`;
+        <li>
+          <span class="audit-tag ${r.action_type?.toLowerCase()}">${r.action_type}</span>
+          item #${r.item_id ?? "—"}
+          ${r.old_price != null ? `&nbsp;${money(r.old_price)} &rarr;` : ""}
+          ${r.new_price != null ? `&nbsp;${money(r.new_price)}` : ""}
+          <div class="audit-when">${r.changed_at ? new Date(r.changed_at).toLocaleString() : ""}</div>
+        </li>`).join("")
+    : `<li class="tag-empty">No changes recorded yet.</li>`;
 }
 
 async function refreshAll() {
@@ -119,7 +137,7 @@ document.getElementById("addItemForm").addEventListener("submit", async (e) => {
 
   try {
     const result = await api("/api/items", { method: "POST", body: JSON.stringify(payload) });
-    msg.textContent = result.message || "Added.";
+    msg.textContent = result.message || "Tag hung.";
     document.getElementById("addItemForm").reset();
     await refreshAll();
   } catch (err) {
@@ -128,22 +146,21 @@ document.getElementById("addItemForm").addEventListener("submit", async (e) => {
   }
 });
 
-// ---------------------------------------------------------------------
-// AI Clerk chat
-// ---------------------------------------------------------------------
-const chatLog = document.getElementById("chatLog");
+// AI Clerk — receipt-printed conversation
+const receiptLines = document.getElementById("receiptLines");
+const receiptScroll = document.getElementById("receiptScroll");
 const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
-const sendBtn = chatForm.querySelector(".send-btn");
+const sendBtn = document.getElementById("sendBtn");
 
 let conversationHistory = [];
 
-function appendLog(text, cls) {
+function printLine(text, cls) {
   const div = document.createElement("div");
-  div.className = "log-line " + cls;
+  div.className = "r-line " + cls;
   div.textContent = text;
-  chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
+  receiptLines.appendChild(div);
+  receiptScroll.scrollTop = receiptScroll.scrollHeight;
   return div;
 }
 
@@ -152,10 +169,10 @@ chatForm.addEventListener("submit", async (e) => {
   const text = chatInput.value.trim();
   if (!text) return;
 
-  appendLog(text, "user");
+  printLine(text, "you");
   chatInput.value = "";
   sendBtn.disabled = true;
-  const thinkingLine = appendLog("thinking…", "thinking");
+  const thinkingLine = printLine("printing...", "thinking");
 
   try {
     const result = await api("/api/chat", {
@@ -166,34 +183,26 @@ chatForm.addEventListener("submit", async (e) => {
     thinkingLine.remove();
 
     (result.trace || []).forEach(t => {
-      appendLog(`⚙ ${t.tool}(${JSON.stringify(t.args)})`, "tool");
+      printLine(`${t.tool}(${JSON.stringify(t.args)})`, "tool");
     });
 
-    appendLog(result.reply, "assistant");
+    printLine(result.reply, "clerk");
     conversationHistory = result.history || conversationHistory;
 
-    // If the agent changed data, refresh the ledger panel automatically
     if ((result.trace || []).some(t => ["add_item", "update_item", "delete_item"].includes(t.tool))) {
       await refreshAll();
     }
   } catch (err) {
     thinkingLine.remove();
-    appendLog("Error: " + err.message, "error");
+    printLine(err.message, "error");
   } finally {
     sendBtn.disabled = false;
     chatInput.focus();
   }
 });
 
-document.getElementById("resetChat").addEventListener("click", () => {
-  conversationHistory = [];
-  chatLog.innerHTML = `<div class="log-line system">Conversation cleared. Ask about stock, add items, or update the ledger in plain English.</div>`;
-});
-
-// ---------------------------------------------------------------------
 // Init
-// ---------------------------------------------------------------------
 refreshAll().catch(err => {
-  document.getElementById("itemsBody").innerHTML =
-    `<tr><td colspan="6" class="loading-row">Could not load ledger: ${escapeHtml(err.message)}</td></tr>`;
+  document.getElementById("itemsGrid").innerHTML =
+    `<div class="tag-empty">Could not load ledger: ${escapeHtml(err.message)}</div>`;
 });

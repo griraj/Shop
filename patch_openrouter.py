@@ -8,9 +8,7 @@ if start == -1 or end == -1:
     raise SystemExit('Marker not found')
 
 old_block = text[start:end]
-new_block = '''# ---------------------------------------------------------
-# OpenRouter API — low-level request helper
-# ---------------------------------------------------------
+new_block = '''# OpenRouter API helper
 
 def _openrouter_request(payload):
     if not OPENROUTER_API_KEY:

@@ -3,123 +3,117 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ledger — Inventory &amp; AI Clerk</title>
+<title>Ledger &amp; Co. — General Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Serif+4:wght@400;600;700&family=Courier+Prime:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rye&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<div class="app">
+<div class="store">
 
-  <!-- ============ LEFT: PAPER LEDGER ============ -->
-  <section class="ledger">
-    <header class="ledger-head">
-      <h1>Stock Ledger</h1>
-      <p class="ledger-sub">Manual record of items &amp; categories</p>
-    </header>
+  <!-- Hanging shop sign -->
+  <header class="sign-wrap">
+    <div class="sign-chain"></div>
+    <div class="sign-board">
+      <span class="sign-line1">Ledger &amp; Co.</span>
+      <span class="sign-line2">General Store — Est. Today</span>
+    </div>
+  </header>
 
-    <nav class="ledger-tabs" id="ledgerTabs">
-      <button class="tab-btn active" data-tab="items">Items</button>
-      <button class="tab-btn" data-tab="categories">Categories</button>
-      <button class="tab-btn" data-tab="audit">Audit Trail</button>
-    </nav>
+  <!-- Main counter surface -->
+  <main class="counter">
 
-    <!-- ITEMS TAB -->
-    <div class="tab-panel active" id="tab-items">
-      <div class="panel-scroll">
-        <table class="ledger-table" id="itemsTable">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Item</th>
-              <th>Category</th>
-              <th class="num">Price</th>
-              <th class="num">Stock</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="itemsBody">
-            <tr><td colspan="6" class="loading-row">Loading ledger…</td></tr>
-          </tbody>
-        </table>
+    <!-- The receipt printer: this IS the AI clerk -->
+    <div class="printer">
+      <div class="printer-body">
+        <div class="printer-slot"></div>
+        <span class="printer-label">Clerk Register</span>
       </div>
 
-      <details class="entry-form" id="addItemDetails">
-        <summary>+ New entry</summary>
-        <form id="addItemForm">
-          <div class="field-row">
+      <div class="receipt" id="receipt">
+        <div class="receipt-torn top" aria-hidden="true"></div>
+        <div class="receipt-scroll" id="receiptScroll">
+          <div class="receipt-header">
+            <div class="r-store-name">LEDGER &amp; CO.</div>
+            <div class="r-sub">ask the clerk anything about stock</div>
+            <div class="r-dash">— — — — — — — — — — — —</div>
+          </div>
+          <div class="receipt-lines" id="receiptLines"></div>
+        </div>
+      </div>
+
+      <form class="ticket-form" id="chatForm">
+        <input type="text" id="chatInput" autocomplete="off" placeholder="type a request for the clerk..." />
+        <button type="submit" id="sendBtn">Ring up</button>
+      </form>
+    </div>
+
+  </main>
+
+  <!-- Drawer pull tab, always visible on the edge -->
+  <button class="drawer-tab" id="drawerTab" aria-expanded="false" aria-controls="drawer">
+    <span class="tab-handle"></span>
+    <span class="tab-text">Ledger drawer</span>
+  </button>
+
+  <!-- The cash drawer: slides in over the counter -->
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-inner">
+      <div class="drawer-head">
+        <h2>Ledger drawer</h2>
+        <button class="drawer-close" id="drawerClose" aria-label="Close drawer">&times;</button>
+      </div>
+
+      <nav class="drawer-tabs">
+        <button class="dtab-btn active" data-tab="items">Items</button>
+        <button class="dtab-btn" data-tab="categories">Categories</button>
+        <button class="dtab-btn" data-tab="audit">Audit</button>
+      </nav>
+
+      <div class="drawer-panel active" id="dpanel-items">
+        <div class="slot-scroll">
+          <div class="tag-grid" id="itemsGrid">
+            <div class="tag-empty">Loading tags…</div>
+          </div>
+        </div>
+
+        <details class="tag-form">
+          <summary>+ Write a new price tag</summary>
+          <form id="addItemForm">
             <label>Item name<input type="text" id="newItemName" required></label>
             <label>Category
               <select id="newItemCategory" required></select>
             </label>
-          </div>
-          <div class="field-row">
-            <label>Price<input type="number" step="0.01" id="newItemPrice" required></label>
-            <label>Stock qty<input type="number" id="newItemStock" required></label>
-          </div>
-          <button type="submit" class="stamp-btn">Record entry</button>
-          <span class="form-msg" id="addItemMsg"></span>
-        </form>
-      </details>
-    </div>
+            <div class="tag-form-row">
+              <label>Price<input type="number" step="0.01" id="newItemPrice" required></label>
+              <label>Stock<input type="number" id="newItemStock" required></label>
+            </div>
+            <button type="submit">Hang tag</button>
+            <span class="tag-form-msg" id="addItemMsg"></span>
+          </form>
+        </details>
+      </div>
 
-    <!-- CATEGORIES TAB -->
-    <div class="tab-panel" id="tab-categories">
-      <div class="panel-scroll">
-        <table class="ledger-table" id="categoriesTable">
-          <thead>
-            <tr><th>#</th><th>Category</th><th class="num">Items</th></tr>
-          </thead>
-          <tbody id="categoriesBody">
-            <tr><td colspan="3" class="loading-row">Loading…</td></tr>
-          </tbody>
-        </table>
+      <div class="drawer-panel" id="dpanel-categories">
+        <div class="slot-scroll">
+          <ul class="compartment-list" id="categoriesList">
+            <li class="tag-empty">Loading…</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="drawer-panel" id="dpanel-audit">
+        <div class="slot-scroll">
+          <ul class="audit-list" id="auditList">
+            <li class="tag-empty">Loading…</li>
+          </ul>
+        </div>
       </div>
     </div>
+  </aside>
 
-    <!-- AUDIT TAB -->
-    <div class="tab-panel" id="tab-audit">
-      <div class="panel-scroll">
-        <table class="ledger-table" id="auditTable">
-          <thead>
-            <tr><th>#</th><th>Item</th><th>Action</th><th class="num">Old</th><th class="num">New</th><th>When</th></tr>
-          </thead>
-          <tbody id="auditBody">
-            <tr><td colspan="6" class="loading-row">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ SPINE / DIVIDER ============ -->
-  <div class="spine" aria-hidden="true">
-    <span class="rivet"></span>
-    <span class="rivet"></span>
-    <span class="rivet"></span>
-    <span class="rivet"></span>
-    <span class="rivet"></span>
-  </div>
-
-  <!-- ============ RIGHT: TERMINAL / AI CLERK ============ -->
-  <section class="terminal">
-    <header class="terminal-head">
-      <span class="terminal-dot"></span>
-      <span class="terminal-title">ai_clerk<span class="cursor-blink">_</span></span>
-      <button class="reset-btn" id="resetChat" title="Clear conversation">reset</button>
-    </header>
-
-    <div class="terminal-log" id="chatLog">
-      <div class="log-line system">AI clerk ready. Ask about stock, add items, or update the ledger in plain English.</div>
-    </div>
-
-    <form class="terminal-input-row" id="chatForm">
-      <span class="prompt-glyph">&gt;</span>
-      <input type="text" id="chatInput" autocomplete="off" placeholder="e.g. add 20 units of Mouse at 2200 in Electronics" />
-      <button type="submit" class="send-btn">Send</button>
-    </form>
-  </section>
+  <div class="drawer-scrim" id="drawerScrim"></div>
 
 </div>
 
