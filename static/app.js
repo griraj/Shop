@@ -1,21 +1,31 @@
 // Helpers
-function escapeHtml(str) {
+function escapeHtml(str)
+{
   const d = document.createElement("div");
   d.textContent = String(str ?? "");
+
   return d.innerHTML;
 }
 
-function money(n) {
+function money(n)
+{
   return "PKR " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+async function api(path, options = {})
+{
+  const res = await fetch(path,
+    {
+    headers:
+    {
+      "Content-Type": "application/json"
+    },
     ...options,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  
+  if (!res.ok)
+  {
     throw new Error(data.detail || `Request failed (${res.status})`);
   }
   return data;
@@ -27,26 +37,30 @@ const drawerTab = document.getElementById("drawerTab");
 const drawerScrim = document.getElementById("drawerScrim");
 const drawerClose = document.getElementById("drawerClose");
 
-function openDrawer() {
+function openDrawer()
+{
   drawer.classList.add("open");
   drawer.setAttribute("aria-hidden", "false");
   drawerTab.setAttribute("aria-expanded", "true");
   drawerScrim.classList.add("show");
 }
-function closeDrawer() {
+function closeDrawer()
+{
   drawer.classList.remove("open");
   drawer.setAttribute("aria-hidden", "true");
   drawerTab.setAttribute("aria-expanded", "false");
   drawerScrim.classList.remove("show");
 }
-drawerTab.addEventListener("click", () => {
+drawerTab.addEventListener("click", () =>
+{
   drawer.classList.contains("open") ? closeDrawer() : openDrawer();
 });
 drawerClose.addEventListener("click", closeDrawer);
 drawerScrim.addEventListener("click", closeDrawer);
 
 // Nav + hero actions
-function scrollToClerk() {
+function scrollToClerk()
+{
   document.getElementById("receipt").scrollIntoView({ behavior: "smooth", block: "center" });
   document.getElementById("chatInput").focus();
 }
@@ -60,8 +74,10 @@ document.getElementById("heroEnter").addEventListener("click", () => {
 document.getElementById("heroTalk").addEventListener("click", scrollToClerk);
 
 // Drawer inner tabs
-document.querySelectorAll(".dtab-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
+document.querySelectorAll(".dtab-btn").forEach(btn =>
+{
+  btn.addEventListener("click", () =>
+  {
     document.querySelectorAll(".dtab-btn").forEach(b => b.classList.remove("active"));
     document.querySelectorAll(".drawer-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
@@ -72,7 +88,8 @@ document.querySelectorAll(".dtab-btn").forEach(btn => {
 // Ledger data (items / categories / audit)
 let categoriesCache = [];
 
-async function loadCategories() {
+async function loadCategories()
+{
   categoriesCache = await api("/api/categories");
   const list = document.getElementById("categoriesList");
   list.innerHTML = categoriesCache.length

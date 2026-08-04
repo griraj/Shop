@@ -16,7 +16,7 @@ Shop/
   inventory.py        Standalone terminal console app (same DB, same agent, menu-driven)
   main.sql            Database schema: tables, trigger, manage_item procedure, migration_log
   requirements.txt
-  .env.example         Template for your local .env (copy and fill in real values)
+  .env
   .gitignore
   static/
     index.html
