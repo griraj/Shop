@@ -1,4 +1,4 @@
-# Shop — Inventory Ledger + AI Clerk
+# AI Inventory — Inventory Ledger + AI Clerk
 
 A split-screen web app on top of a Postgres inventory database:
 

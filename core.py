@@ -238,10 +238,9 @@ def run_agent(user_message, history=None):
             return {
                 "reply": reply,
                 "trace": trace,
-                "history": messages[1:],  # drop system prompt before returning
+                "history": messages[1:],
             }
 
-        # Record the assistant's tool-call turn
         messages.append(message)
 
         for tool_call in message.tool_calls:

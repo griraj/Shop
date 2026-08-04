@@ -12,19 +12,101 @@
 
 <div class="store">
 
-  <!-- Hanging shop sign -->
-  <header class="sign-wrap">
-    <div class="sign-chain"></div>
-    <div class="sign-board">
-      <span class="sign-line1">Ledger &amp; Co.</span>
-      <span class="sign-line2">General Store — Est. Today</span>
+  <nav class="site-nav">
+    <div class="nav-inner">
+      <div class="nav-logo">
+        <span class="nav-logo-mark" aria-hidden="true"></span>
+        <span class="nav-logo-text">Ledger <em>&amp;</em> Co.</span>
+      </div>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#" id="navLedger">Ledger</a>
+        <a href="#" id="navClerk">Clerk</a>
+        <a href="#siteFooterNote">Support</a>
+      </div>
+      <div class="nav-actions">
+        <button class="nav-btn ghost" id="navOpenDrawer" type="button">Open Drawer</button>
+        <button class="nav-btn solid" id="navTryDemo" type="button">Ring Up a Demo</button>
+      </div>
     </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-float pf-1"><span class="pf-dot" style="background:#5B8DB8"></span>Electronics</div>
+    <div class="hero-float pf-2"><span class="pf-dot" style="background:#7A9E6B"></span>Groceries</div>
+    <div class="hero-float pf-3"><span class="pf-dot" style="background:#B08D57"></span>Stationery</div>
+    <div class="hero-float pf-4"><span class="pf-dot" style="background:#A8433A"></span>Live Audit</div>
+
+    <span class="hero-badge">✦ Now With An AI Clerk On Every Shift</span>
+
+    <h1 class="hero-title">
+      The General Store Ledger —<br>
+      Stock, Sold, and Settled by an <span>AI Clerk</span>
+    </h1>
+
+    <p class="hero-sub">
+      Ledger &amp; Co. keeps your shop's real inventory: items, categories, prices, and stock
+      levels, backed by a live audit trail. Ask the clerk to add stock, check what's running low,
+      or ring up a change — in plain English, in seconds.
+    </p>
+
+    <div class="hero-features" id="features">
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#5B8DB8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>
+        </span>
+        <span>Stock Items</span>
+      </div>
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#B08D57">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5 12.5 20a2 2 0 0 1-3 0L4 14.5a2 2 0 0 1 0-3L11.5 4H18a2 2 0 0 1 2 2v6.5Z"/><circle cx="14.5" cy="9.5" r="1.5"/></svg>
+        </span>
+        <span>Categories</span>
+      </div>
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#3F6B3F">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12h6M12 9v6"/></svg>
+        </span>
+        <span>Live Pricing</span>
+      </div>
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#A8433A">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a2 2 0 0 1 2 2v14l-4-2-2 2-2-2-4 2V5a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 12h6"/></svg>
+        </span>
+        <span>Audit Trail</span>
+      </div>
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#7A9E6B">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10Z"/></svg>
+        </span>
+        <span>AI Clerk</span>
+      </div>
+      <div class="hf-item">
+        <span class="hf-icon" style="--hf:#8B5A2B">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        </span>
+        <span>Instant Search</span>
+      </div>
+    </div>
+
+    <div class="hero-actions">
+      <button class="btn-primary" id="heroEnter" type="button">Enter the Store</button>
+      <button class="btn-ghost" id="heroTalk" type="button">↗ Talk to the Clerk</button>
+    </div>
+
+    <p class="hero-note">No spreadsheets. No paperwork piles. Just a ledger that talks back.</p>
   </header>
 
-  <!-- Main counter surface -->
   <main class="counter">
 
-    <!-- The receipt printer: this IS the AI clerk -->
+    <div class="preview-frame">
+      <div class="frame-chrome">
+        <span class="frame-dot red"></span>
+        <span class="frame-dot yellow"></span>
+        <span class="frame-dot green"></span>
+        <span class="frame-url">ledger.local — clerk register</span>
+      </div>
+
     <div class="printer">
       <div class="printer-body">
         <div class="printer-slot"></div>
@@ -49,15 +131,17 @@
       </form>
     </div>
 
+    </div>
+
   </main>
 
-  <!-- Drawer pull tab, always visible on the edge -->
+  <p class="site-footer-note" id="siteFooterNote">Questions about your ledger? Just ask the clerk above.</p>
+
   <button class="drawer-tab" id="drawerTab" aria-expanded="false" aria-controls="drawer">
     <span class="tab-handle"></span>
     <span class="tab-text">Ledger drawer</span>
   </button>
 
-  <!-- The cash drawer: slides in over the counter -->
   <aside class="drawer" id="drawer" aria-hidden="true">
     <div class="drawer-inner">
       <div class="drawer-head">

@@ -5,7 +5,6 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-// Format money
 function money(n) {
   return "PKR " + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -46,6 +45,20 @@ drawerTab.addEventListener("click", () => {
 drawerClose.addEventListener("click", closeDrawer);
 drawerScrim.addEventListener("click", closeDrawer);
 
+// Nav + hero actions
+function scrollToClerk() {
+  document.getElementById("receipt").scrollIntoView({ behavior: "smooth", block: "center" });
+  document.getElementById("chatInput").focus();
+}
+document.getElementById("navOpenDrawer").addEventListener("click", openDrawer);
+document.getElementById("navLedger").addEventListener("click", (e) => { e.preventDefault(); openDrawer(); });
+document.getElementById("navClerk").addEventListener("click", (e) => { e.preventDefault(); scrollToClerk(); });
+document.getElementById("navTryDemo").addEventListener("click", scrollToClerk);
+document.getElementById("heroEnter").addEventListener("click", () => {
+  document.querySelector(".preview-frame").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+document.getElementById("heroTalk").addEventListener("click", scrollToClerk);
+
 // Drawer inner tabs
 document.querySelectorAll(".dtab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -78,16 +91,19 @@ async function loadItems() {
   const items = await api("/api/items");
   const grid = document.getElementById("itemsGrid");
   grid.innerHTML = items.length
-    ? items.map(i => `
+    ? items.map(i => {
+        const cleanName = String(i.itemname).replace(/\s*\d+\s*$/, "").trim();
+        return `
         <div class="tag-card" data-id="${i.itemid}">
-          <span class="tag-hole"></span>
+          <span class="tag-num">${i.itemid}</span>
           <div class="tag-info">
-            <div class="tag-name">${escapeHtml(i.itemname)}</div>
+            <div class="tag-name">${escapeHtml(cleanName)}</div>
             <div class="tag-meta">${escapeHtml(i.categoryname || "uncategorized")} · stock ${i.stockquantity}</div>
           </div>
           <div class="tag-price">${money(i.price)}</div>
           <button class="tag-del" data-id="${i.itemid}">Del</button>
-        </div>`).join("")
+        </div>`;
+      }).join("")
     : `<div class="tag-empty">No tags hanging yet. Write one below.</div>`;
 
   grid.querySelectorAll(".tag-del").forEach(btn => {
@@ -164,42 +180,47 @@ function printLine(text, cls) {
   return div;
 }
 
-chatForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = chatInput.value.trim();
-  if (!text) return;
+if (chatForm && chatInput && sendBtn) {
+  chatForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
 
-  printLine(text, "you");
-  chatInput.value = "";
-  sendBtn.disabled = true;
-  const thinkingLine = printLine("printing...", "thinking");
+    printLine(text, "you");
+    chatInput.value = "";
+    sendBtn.disabled = true;
+    const thinkingLine = printLine("printing...", "thinking");
 
-  try {
-    const result = await api("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ message: text, history: conversationHistory }),
-    });
+    try {
+      const result = await api("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: text, history: conversationHistory }),
+      });
 
-    thinkingLine.remove();
+      thinkingLine.remove();
+      if (!result || typeof result !== "object") {
+        throw new Error("Invalid chat response");
+      }
 
-    (result.trace || []).forEach(t => {
-      printLine(`${t.tool}(${JSON.stringify(t.args)})`, "tool");
-    });
+      (result.trace || []).forEach(t => {
+        printLine(`${t.tool}(${JSON.stringify(t.args)})`, "tool");
+      });
 
-    printLine(result.reply, "clerk");
-    conversationHistory = result.history || conversationHistory;
+      printLine(result.reply ?? "(no response)", "clerk");
+      conversationHistory = Array.isArray(result.history) ? result.history : conversationHistory;
 
-    if ((result.trace || []).some(t => ["add_item", "update_item", "delete_item"].includes(t.tool))) {
-      await refreshAll();
+      if ((result.trace || []).some(t => ["add_item", "update_item", "delete_item"].includes(t.tool))) {
+        await refreshAll();
+      }
+    } catch (err) {
+      thinkingLine.remove();
+      printLine(err.message, "error");
+    } finally {
+      sendBtn.disabled = false;
+      chatInput.focus();
     }
-  } catch (err) {
-    thinkingLine.remove();
-    printLine(err.message, "error");
-  } finally {
-    sendBtn.disabled = false;
-    chatInput.focus();
-  }
-});
+  });
+}
 
 // Init
 refreshAll().catch(err => {

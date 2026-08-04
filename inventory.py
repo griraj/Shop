@@ -481,7 +481,7 @@ def ai_agent(conn):
 
     print("\nThinking...")
     try:
-        for _ in range(6):  # safety cap on reasoning/tool-call rounds
+        for _ in range(6):
             model_message = openrouter_chat(messages, tools=AGENT_TOOLS)
 
             tool_calls = model_message.get("tool_calls")
@@ -490,7 +490,6 @@ def ai_agent(conn):
                 print(f"\n{text or '(no response)'}")
                 break
 
-            # Echo the assistant's turn (including its requested tool calls) back into conversation
             messages.append({
                 "role": "assistant",
                 "content": model_message.get("content"),
